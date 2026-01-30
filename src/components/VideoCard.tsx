@@ -1,0 +1,97 @@
+import { motion } from 'framer-motion';
+import { Play, Trash2, Calendar } from 'lucide-react';
+import { Video } from '@/lib/supabase';
+import { GlassCard } from './GlassCard';
+import { useAuth } from '@/contexts/AuthContext';
+
+interface VideoCardProps {
+  video: Video;
+  onPlay: (video: Video) => void;
+  onDelete?: (video: Video) => void;
+  index: number;
+}
+
+export function VideoCard({ video, onPlay, onDelete, index }: VideoCardProps) {
+  const { isAdmin } = useAuth();
+  
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString('pt-BR', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric'
+    });
+  };
+
+  // Generate a thumbnail from video URL or use placeholder
+  const thumbnail = video.thumbnail_url || `https://img.youtube.com/vi/dQw4w9WgXcQ/maxresdefault.jpg`;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 30, scale: 0.95 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ 
+        duration: 0.4, 
+        delay: index * 0.1,
+        ease: [0.22, 1, 0.36, 1]
+      }}
+    >
+      <GlassCard 
+        className="overflow-hidden group cursor-pointer video-card-glow"
+        hover
+        onClick={() => onPlay(video)}
+      >
+        {/* Thumbnail */}
+        <div className="relative aspect-video bg-black/20 overflow-hidden">
+          <motion.img
+            src={thumbnail}
+            alt={video.title}
+            className="w-full h-full object-cover"
+            whileHover={{ scale: 1.05 }}
+            transition={{ duration: 0.4 }}
+          />
+          
+          {/* Play overlay */}
+          <motion.div
+            className="absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+            whileHover={{ backgroundColor: 'rgba(0,0,0,0.4)' }}
+          >
+            <motion.div
+              className="w-16 h-16 rounded-full bg-primary/90 flex items-center justify-center"
+              initial={{ scale: 0.8 }}
+              whileHover={{ scale: 1.1 }}
+              transition={{ type: 'spring', stiffness: 300 }}
+            >
+              <Play className="w-8 h-8 text-primary-foreground ml-1" fill="currentColor" />
+            </motion.div>
+          </motion.div>
+
+          {/* Delete button for admins */}
+          {isAdmin && onDelete && (
+            <motion.button
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete(video);
+              }}
+              className="absolute top-2 right-2 p-2 rounded-lg bg-destructive/80 text-white opacity-0 group-hover:opacity-100 transition-opacity duration-200 hover:bg-destructive"
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.9 }}
+            >
+              <Trash2 className="w-4 h-4" />
+            </motion.button>
+          )}
+        </div>
+
+        {/* Content */}
+        <div className="p-4">
+          <h3 className="font-bold text-foreground truncate mb-2 group-hover:text-primary transition-colors">
+            {video.title}
+          </h3>
+          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+            <Calendar className="w-3 h-3" />
+            <span>{formatDate(video.created_at)}</span>
+          </div>
+        </div>
+      </GlassCard>
+    </motion.div>
+  );
+}
