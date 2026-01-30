@@ -14,6 +14,7 @@ export interface Video {
   id: string;
   title: string;
   url: string;
+  storage_path?: string;
   thumbnail_url?: string;
   created_at: string;
 }
@@ -28,4 +29,10 @@ export interface PlaylistItem {
   id: string;
   playlist_id: string;
   video_id: string;
+}
+
+// Helper to get public URL from storage path
+export function getPublicUrl(bucket: string, path: string): string {
+  const { data } = supabase.storage.from(bucket).getPublicUrl(path);
+  return data.publicUrl;
 }

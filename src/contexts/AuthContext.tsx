@@ -21,14 +21,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   const fetchProfile = async (userId: string) => {
-    const { data } = await supabase
-      .from('profiles')
-      .select('id, role')
-      .eq('id', userId)
-      .single();
-    
-    if (data) {
-      setProfile(data as Profile);
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, role')
+        .eq('id', userId)
+        .maybeSingle();
+      
+      if (error) {
+        console.error('Error fetching profile:', error);
+        return;
+      }
+      
+      if (data) {
+        setProfile(data as Profile);
+      } else {
+        // If no profile exists, create one with 'comum' role
+        const { data: newProfile, error: insertError } = await supabase
+          .from('profiles')
+          .insert({ id: userId, role: 'comum' })
+          .select()
+          .single();
+        
+        if (!insertError && newProfile) {
+          setProfile(newProfile as Profile);
+        }
+      }
+    } catch (err) {
+      console.error('Profile fetch error:', err);
     }
   };
 
@@ -66,8 +86,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    return { error: error as Error | null };
+    try {
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      return { error: error as Error | null };
+    } catch (err) {
+      return { error: err as Error };
+    }
   };
 
   const signOut = async () => {
@@ -75,6 +99,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setProfile(null);
   };
 
+  // Ensure isAdmin is correctly derived from profile
   const isAdmin = profile?.role === 'admin';
 
   return (
