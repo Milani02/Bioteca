@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { Mail, Lock, Eye, EyeOff, LogIn } from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff, LogIn, AlertCircle } from 'lucide-react';
 import { AnimatedBackground } from '@/components/AnimatedBackground';
 import { GlassCard } from '@/components/GlassCard';
 import { useAuth } from '@/contexts/AuthContext';
+import { toast } from 'sonner';
 import logo from '@/assets/bioteca_logo.png';
 
 export default function Login() {
@@ -25,9 +26,29 @@ export default function Login() {
     const { error } = await signIn(email, password);
 
     if (error) {
-      setError('E-mail ou senha incorretos.');
+      // Handle specific error codes
+      let errorMessage = 'E-mail ou senha incorretos.';
+      
+      if (error.message.includes('Invalid login credentials')) {
+        errorMessage = 'Credenciais inválidas. Verifique seu e-mail e senha.';
+      } else if (error.message.includes('Email not confirmed')) {
+        errorMessage = 'E-mail não confirmado. Verifique sua caixa de entrada.';
+      } else if (error.message.includes('Too many requests')) {
+        errorMessage = 'Muitas tentativas. Aguarde alguns minutos.';
+      } else if (error.message.includes('Network')) {
+        errorMessage = 'Erro de conexão. Verifique sua internet.';
+      }
+
+      setError(errorMessage);
+      toast.error(errorMessage, {
+        className: 'glass-card border border-white/10',
+        icon: <AlertCircle className="w-5 h-5 text-destructive" />
+      });
       setLoading(false);
     } else {
+      toast.success('Login realizado com sucesso!', {
+        className: 'glass-card border border-white/10'
+      });
       navigate('/dashboard');
     }
   };
@@ -42,10 +63,10 @@ export default function Login() {
         transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
         className="w-full max-w-md"
       >
-        <GlassCard className="p-8 md:p-10">
+        <GlassCard className="p-6 sm:p-8 md:p-10">
           {/* Logo */}
           <motion.div 
-            className="text-center mb-8"
+            className="text-center mb-6 sm:mb-8"
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.2, duration: 0.5 }}
@@ -53,7 +74,7 @@ export default function Login() {
             <motion.img
               src={logo}
               alt="Bioteca"
-              className="h-12 mx-auto mb-4"
+              className="h-10 sm:h-12 mx-auto mb-4"
               whileHover={{ scale: 1.05 }}
               transition={{ type: 'spring', stiffness: 300 }}
             />
@@ -117,13 +138,14 @@ export default function Login() {
 
             {/* Error Message */}
             {error && (
-              <motion.p
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="text-destructive text-sm text-center font-medium"
+              <motion.div
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="flex items-center gap-2 p-3 rounded-xl bg-destructive/10 border border-destructive/20"
               >
-                {error}
-              </motion.p>
+                <AlertCircle className="w-4 h-4 text-destructive flex-shrink-0" />
+                <p className="text-destructive text-sm font-medium">{error}</p>
+              </motion.div>
             )}
 
             {/* Submit Button */}

@@ -18,27 +18,18 @@ interface SidebarProps {
   selectedPlaylist: string | null;
   onSelectPlaylist: (id: string | null, title: string) => void;
   onCreatePlaylist?: () => void;
+  playlists: Playlist[];
+  onRefreshPlaylists: () => void;
 }
 
-export function Sidebar({ selectedPlaylist, onSelectPlaylist, onCreatePlaylist }: SidebarProps) {
+export function Sidebar({ 
+  selectedPlaylist, 
+  onSelectPlaylist, 
+  onCreatePlaylist,
+  playlists 
+}: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
-  const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const { profile, signOut, isAdmin } = useAuth();
-
-  useEffect(() => {
-    loadPlaylists();
-  }, []);
-
-  const loadPlaylists = async () => {
-    const { data } = await supabase
-      .from('playlists')
-      .select('*')
-      .order('title', { ascending: true });
-    
-    if (data) {
-      setPlaylists(data);
-    }
-  };
 
   const handleLogout = async () => {
     await signOut();
@@ -48,7 +39,7 @@ export function Sidebar({ selectedPlaylist, onSelectPlaylist, onCreatePlaylist }
   return (
     <motion.aside
       className={cn(
-        'glass-sidebar h-screen flex flex-col transition-all duration-300 relative',
+        'glass-sidebar h-screen flex-col transition-all duration-300 relative hidden md:flex',
         collapsed ? 'w-20' : 'w-64'
       )}
       initial={{ x: -100, opacity: 0 }}

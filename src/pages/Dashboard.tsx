@@ -10,17 +10,21 @@ import {
 } from 'lucide-react';
 import { AnimatedBackground } from '@/components/AnimatedBackground';
 import { Sidebar } from '@/components/Sidebar';
+import { MobileDrawer } from '@/components/MobileDrawer';
+import { MobileHeader } from '@/components/MobileHeader';
 import { VideoCard } from '@/components/VideoCard';
 import { VideoPlayerModal } from '@/components/VideoPlayerModal';
 import { UploadModal } from '@/components/UploadModal';
+import { CreatePlaylistModal } from '@/components/CreatePlaylistModal';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase, Video } from '@/lib/supabase';
+import { supabase, Video, Playlist } from '@/lib/supabase';
 import { toast } from 'sonner';
 
 type SortOption = 'newest' | 'oldest' | 'title-asc';
 
 export default function Dashboard() {
   const [videos, setVideos] = useState<Video[]>([]);
+  const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [sortOption, setSortOption] = useState<SortOption>('newest');
@@ -29,6 +33,8 @@ export default function Dashboard() {
   const [selectedVideo, setSelectedVideo] = useState<Video | null>(null);
   const [isPlayerOpen, setIsPlayerOpen] = useState(false);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
+  const [isCreatePlaylistOpen, setIsCreatePlaylistOpen] = useState(false);
+  const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
 
   const { loading: authLoading, user, isAdmin } = useAuth();
   const navigate = useNavigate();
@@ -40,10 +46,29 @@ export default function Dashboard() {
     }
   }, [authLoading, user, navigate]);
 
-  // Load videos
+  // Load playlists on mount
+  useEffect(() => {
+    loadPlaylists();
+  }, []);
+
+  // Load videos when playlist changes
   useEffect(() => {
     loadVideos();
   }, [selectedPlaylist]);
+
+  const loadPlaylists = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('playlists')
+        .select('*')
+        .order('title', { ascending: true });
+      
+      if (error) throw error;
+      setPlaylists(data || []);
+    } catch (error: any) {
+      console.error('Error loading playlists:', error);
+    }
+  };
 
   const loadVideos = async () => {
     setLoading(true);
@@ -53,10 +78,12 @@ export default function Dashboard() {
 
       if (selectedPlaylist) {
         // Get video IDs from playlist
-        const { data: relations } = await supabase
+        const { data: relations, error: relError } = await supabase
           .from('playlist_items')
           .select('video_id')
           .eq('playlist_id', selectedPlaylist);
+
+        if (relError) throw relError;
 
         if (relations && relations.length > 0) {
           const ids = relations.map(r => r.video_id);
@@ -73,7 +100,9 @@ export default function Dashboard() {
       if (error) throw error;
       setVideos(data || []);
     } catch (error: any) {
-      toast.error('Erro ao carregar vídeos');
+      toast.error('Erro ao carregar vídeos', {
+        className: 'glass-card border border-white/10'
+      });
       console.error(error);
     } finally {
       setLoading(false);
@@ -111,6 +140,11 @@ export default function Dashboard() {
     if (!confirm(`Tem certeza que deseja excluir "${video.title}"?`)) return;
 
     try {
+      // Delete from storage if storage_path exists
+      if (video.storage_path) {
+        await supabase.storage.from('videos').remove([video.storage_path]);
+      }
+
       const { error } = await supabase
         .from('videos')
         .delete()
@@ -118,10 +152,14 @@ export default function Dashboard() {
 
       if (error) throw error;
 
-      toast.success('Vídeo excluído com sucesso');
+      toast.success('Vídeo excluído com sucesso', {
+        className: 'glass-card border border-white/10'
+      });
       loadVideos();
     } catch (error: any) {
-      toast.error('Erro ao excluir vídeo');
+      toast.error('Erro ao excluir vídeo', {
+        className: 'glass-card border border-white/10'
+      });
     }
   };
 
@@ -138,17 +176,39 @@ export default function Dashboard() {
     <div className="min-h-screen flex relative">
       <AnimatedBackground />
       
-      {/* Sidebar */}
+      {/* Desktop Sidebar */}
       <Sidebar
         selectedPlaylist={selectedPlaylist}
         onSelectPlaylist={handlePlaylistSelect}
+        onCreatePlaylist={() => setIsCreatePlaylistOpen(true)}
+        playlists={playlists}
+        onRefreshPlaylists={loadPlaylists}
+      />
+
+      {/* Mobile Drawer */}
+      <MobileDrawer
+        isOpen={isMobileDrawerOpen}
+        onClose={() => setIsMobileDrawerOpen(false)}
+        playlists={playlists}
+        selectedPlaylist={selectedPlaylist}
+        onSelectPlaylist={handlePlaylistSelect}
+        onCreatePlaylist={() => setIsCreatePlaylistOpen(true)}
       />
 
       {/* Main Content */}
-      <main className="flex-1 overflow-y-auto scrollbar-glass">
-        {/* Header */}
+      <main className="flex-1 overflow-y-auto scrollbar-glass min-h-screen">
+        {/* Mobile Header */}
+        <MobileHeader
+          onMenuClick={() => setIsMobileDrawerOpen(true)}
+          onUploadClick={() => setIsUploadOpen(true)}
+          isAdmin={isAdmin}
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
+        />
+
+        {/* Desktop Header */}
         <motion.header
-          className="sticky top-0 z-10 glass-card m-4 mb-0 rounded-2xl p-4"
+          className="sticky top-0 z-10 glass-card m-4 mb-0 rounded-2xl p-4 hidden md:block"
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4, delay: 0.2 }}
@@ -196,11 +256,11 @@ export default function Dashboard() {
         </motion.header>
 
         {/* Content Area */}
-        <div className="p-4 pt-6">
+        <div className="p-3 sm:p-4 pt-4 sm:pt-6">
           {/* Title */}
           <motion.h1
             key={currentTitle}
-            className="text-2xl font-bold text-foreground mb-6"
+            className="text-xl sm:text-2xl font-bold text-foreground mb-4 sm:mb-6"
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.3 }}
@@ -208,14 +268,14 @@ export default function Dashboard() {
             {currentTitle}
           </motion.h1>
 
-          {/* Video Grid */}
+          {/* Video Grid - Responsive */}
           {loading ? (
             <div className="flex items-center justify-center py-20">
               <Loader2 className="w-8 h-8 animate-spin text-primary" />
             </div>
           ) : filteredVideos.length > 0 ? (
             <motion.div 
-              className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"
+              className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-4 sm:gap-6"
               layout
             >
               <AnimatePresence mode="popLayout">
@@ -236,11 +296,11 @@ export default function Dashboard() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
             >
-              <VideoIcon className="w-16 h-16 text-muted-foreground mb-4" />
-              <h3 className="text-lg font-semibold text-foreground mb-2">
+              <VideoIcon className="w-12 h-12 sm:w-16 sm:h-16 text-muted-foreground mb-4" />
+              <h3 className="text-base sm:text-lg font-semibold text-foreground mb-2">
                 Nenhum vídeo encontrado
               </h3>
-              <p className="text-muted-foreground">
+              <p className="text-muted-foreground text-sm sm:text-base">
                 {searchQuery 
                   ? 'Tente uma busca diferente' 
                   : 'Esta seção ainda não possui vídeos'
@@ -266,6 +326,13 @@ export default function Dashboard() {
         isOpen={isUploadOpen}
         onClose={() => setIsUploadOpen(false)}
         onSuccess={loadVideos}
+      />
+
+      {/* Create Playlist Modal */}
+      <CreatePlaylistModal
+        isOpen={isCreatePlaylistOpen}
+        onClose={() => setIsCreatePlaylistOpen(false)}
+        onSuccess={loadPlaylists}
       />
     </div>
   );

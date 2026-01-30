@@ -164,16 +164,24 @@
 
   /* Glass Input */
   .glass-input {
-    @apply w-full px-4 py-3 rounded-xl transition-all duration-200;
+    @apply w-full px-4 py-3 rounded-xl transition-all duration-200 text-foreground;
     background: hsl(0 0% 100% / 0.5);
     border: 1px solid hsl(var(--glass-border));
     backdrop-filter: blur(8px);
+  }
+
+  .glass-input::placeholder {
+    @apply text-muted-foreground;
   }
 
   .glass-input:focus {
     @apply outline-none ring-2 ring-primary/30;
     background: hsl(0 0% 100% / 0.8);
     border-color: hsl(var(--primary));
+  }
+
+  .glass-input option {
+    @apply bg-background text-foreground;
   }
 
   /* Glass Button */
