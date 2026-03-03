@@ -175,14 +175,15 @@ export default function Login() {
         </GlassCard>
 
         {/* Footer */}
-        <motion.p
-          className="text-center text-muted-foreground text-xs mt-6"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.6 }}
-        >
-          © 2025 Todos os direitos reservados a Bidodinâmica.
-        </motion.p>
+       {/* Substitua text-muted-foreground por text-white/80 ou text-primary-foreground */}
+<motion.p
+  className="text-center text-white/80 text-xs mt-6"
+  initial={{ opacity: 0 }}
+  animate={{ opacity: 1 }}
+  transition={{ delay: 0.6 }}
+>
+  © 2026 Todos os direitos reservados a Bidodinâmica.
+</motion.p>
       </motion.div>
     </div>
   );

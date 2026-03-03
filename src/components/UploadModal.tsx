@@ -3,6 +3,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { X, Upload, FileVideo, Loader2, Image as ImageIcon, ChevronDown } from 'lucide-react';
 import { supabase, Playlist } from '@/lib/supabase';
 import { toast } from 'sonner';
+// [NOVO] Importar o TUS
+import * as tus from 'tus-js-client';
 
 interface UploadModalProps {
   isOpen: boolean;
@@ -11,6 +13,7 @@ interface UploadModalProps {
 }
 
 export function UploadModal({ isOpen, onClose, onSuccess }: UploadModalProps) {
+  // ... (seus estados permanecem iguais)
   const [title, setTitle] = useState('');
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [thumbnailFile, setThumbnailFile] = useState<File | null>(null);
@@ -21,41 +24,26 @@ export function UploadModal({ isOpen, onClose, onSuccess }: UploadModalProps) {
   const [progress, setProgress] = useState(0);
   const [uploadStep, setUploadStep] = useState('');
 
+  // ... (seus useEffects e loadPlaylists permanecem iguais)
+  useEffect(() => { if (isOpen) loadPlaylists(); }, [isOpen]);
   useEffect(() => {
-    if (isOpen) {
-      loadPlaylists();
-    }
-  }, [isOpen]);
-
-  useEffect(() => {
-    // Create preview URL for thumbnail
     if (thumbnailFile) {
       const url = URL.createObjectURL(thumbnailFile);
       setThumbnailPreview(url);
       return () => URL.revokeObjectURL(url);
-    } else {
-      setThumbnailPreview(null);
-    }
+    } else { setThumbnailPreview(null); }
   }, [thumbnailFile]);
 
   const loadPlaylists = async () => {
-    const { data } = await supabase
-      .from('playlists')
-      .select('*')
-      .order('title', { ascending: true });
-    
-    if (data) {
-      setPlaylists(data);
-    }
+    const { data } = await supabase.from('playlists').select('*').order('title', { ascending: true });
+    if (data) setPlaylists(data);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!title.trim() || !videoFile) {
-      toast.error('Preencha o título e selecione um vídeo', {
-        className: 'glass-card border border-white/10'
-      });
+      toast.error('Preencha o título e selecione um vídeo');
       return;
     }
 
@@ -64,113 +52,135 @@ export function UploadModal({ isOpen, onClose, onSuccess }: UploadModalProps) {
 
     try {
       const timestamp = Date.now();
-      
-      // Step 1: Upload video
-      setUploadStep('Enviando vídeo...');
       const videoExt = videoFile.name.split('.').pop();
       const videoFileName = `${timestamp}.${videoExt}`;
       
-      const { error: videoUploadError } = await supabase.storage
-        .from('videos')
-        .upload(videoFileName, videoFile, {
-          cacheControl: '3600',
-          upsert: false
-        });
+      // 1. Pegar a sessão para autenticar o upload TUS
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('Usuário não autenticado');
 
-      if (videoUploadError) {
-        throw new Error(`Erro ao enviar vídeo: ${videoUploadError.message}`);
-      }
-
-      setProgress(40);
-
-      // Get video public URL
-      const { data: videoUrlData } = supabase.storage
-        .from('videos')
-        .getPublicUrl(videoFileName);
-
-      // Step 2: Upload thumbnail if provided
-      let thumbnailUrl: string | null = null;
-      if (thumbnailFile) {
-        setUploadStep('Enviando thumbnail...');
-        const thumbExt = thumbnailFile.name.split('.').pop();
-        const thumbFileName = `${timestamp}.${thumbExt}`;
-        
-        const { error: thumbUploadError } = await supabase.storage
-          .from('thumbnails')
-          .upload(thumbFileName, thumbnailFile, {
-            cacheControl: '3600',
-            upsert: false
-          });
-
-        if (thumbUploadError) {
-          console.warn('Thumbnail upload failed:', thumbUploadError);
-          // Continue without thumbnail
-        } else {
-          const { data: thumbUrlData } = supabase.storage
-            .from('thumbnails')
-            .getPublicUrl(thumbFileName);
-          thumbnailUrl = thumbUrlData.publicUrl;
-        }
-      }
-
-      setProgress(70);
-
-      // Step 3: Insert video record with storage_path and thumbnail_url
-      setUploadStep('Salvando registro...');
-      const { data: insertedVideo, error: insertError } = await supabase
-        .from('videos')
-        .insert({
-          title: title.trim(),
-          url: videoUrlData.publicUrl,
-          storage_path: videoFileName,
-          thumbnail_url: thumbnailUrl,
-        })
-        .select()
-        .single();
-
-      if (insertError) {
-        throw new Error(`Erro ao salvar vídeo: ${insertError.message}`);
-      }
-
-      setProgress(85);
-
-      // Step 4: Link to playlist if selected
-      if (selectedPlaylist && insertedVideo) {
-        setUploadStep('Vinculando à playlist...');
-        const { error: linkError } = await supabase
-          .from('playlist_items')
-          .insert({
-            playlist_id: selectedPlaylist,
-            video_id: insertedVideo.id
-          });
-
-        if (linkError) {
-          console.warn('Failed to link to playlist:', linkError);
-        }
-      }
-
-      setProgress(100);
-      toast.success('Vídeo publicado com sucesso!', {
-        className: 'glass-card border border-white/10'
-      });
+      // 2. Configurar Upload Resumível (TUS) para o vídeo
+      setUploadStep('Enviando vídeo (Otimizado)...');
       
-      // Reset form
-      resetForm();
-      onSuccess();
-      onClose();
+      // Precisamos do Project ID para montar a URL do TUS
+      // O supabaseUrl geralmente é algo como https://xyz.supabase.co
+      const projectId = import.meta.env.VITE_SUPABASE_URL 
+        ? new URL(import.meta.env.VITE_SUPABASE_URL).hostname.split('.')[0]
+        : ''; // Fallback ou ajuste conforme suas env vars
+
+      if (!projectId) throw new Error("Supabase URL não configurada");
+
+      const upload = new tus.Upload(videoFile, {
+        endpoint: `https://${projectId}.supabase.co/storage/v1/upload/resumable`,
+        retryDelays: [0, 3000, 5000, 10000, 20000],
+        headers: {
+          authorization: `Bearer ${session.access_token}`,
+          'x-upsert': 'false', // ou 'true' se quiser sobrescrever
+        },
+        uploadDataDuringCreation: true,
+        removeFingerprintOnSuccess: true, // Limpa cache de uploads antigos
+        metadata: {
+          bucketName: 'videos',
+          objectName: videoFileName,
+          contentType: videoFile.type,
+          cacheControl: '3600',
+        },
+        chunkSize: 6 * 1024 * 1024, // Upload em pedaços de 6MB (Evita o erro 544)
+        onError: function (error) {
+          console.error('Failed because: ' + error);
+          toast.error('Falha no upload do vídeo: ' + error);
+          setUploading(false);
+        },
+        onProgress: function (bytesUploaded, bytesTotal) {
+          const percentage = ((bytesUploaded / bytesTotal) * 100);
+          // O vídeo é a parte mais pesada, então vamos usar 0-90% para ele
+          setProgress(Math.round(percentage * 0.9));
+        },
+        onSuccess: async function () {
+          try {
+            // O upload do vídeo terminou, agora seguimos com o resto
+            
+            // Get video public URL
+            const { data: videoUrlData } = supabase.storage
+              .from('videos')
+              .getPublicUrl(videoFileName);
+
+            // Step 2: Upload thumbnail (Esse é pequeno, pode usar o método padrão)
+            let thumbnailUrl: string | null = null;
+            if (thumbnailFile) {
+              setUploadStep('Enviando thumbnail...');
+              const thumbExt = thumbnailFile.name.split('.').pop();
+              const thumbFileName = `${timestamp}.${thumbExt}`;
+              
+              const { error: thumbUploadError } = await supabase.storage
+                .from('thumbnails')
+                .upload(thumbFileName, thumbnailFile);
+
+              if (!thumbUploadError) {
+                const { data: thumbUrlData } = supabase.storage
+                  .from('thumbnails')
+                  .getPublicUrl(thumbFileName);
+                thumbnailUrl = thumbUrlData.publicUrl;
+              }
+            }
+
+            setProgress(95);
+
+            // Step 3: Insert video record
+            setUploadStep('Salvando registro...');
+            const { data: insertedVideo, error: insertError } = await supabase
+              .from('videos')
+              .insert({
+                title: title.trim(),
+                url: videoUrlData.publicUrl,
+                storage_path: videoFileName,
+                thumbnail_url: thumbnailUrl,
+              })
+              .select()
+              .single();
+
+            if (insertError) throw insertError;
+
+            // Step 4: Link to playlist
+            if (selectedPlaylist && insertedVideo) {
+              await supabase
+                .from('playlist_items')
+                .insert({
+                  playlist_id: selectedPlaylist,
+                  video_id: insertedVideo.id
+                });
+            }
+
+            setProgress(100);
+            toast.success('Vídeo publicado com sucesso!');
+            resetForm();
+            onSuccess();
+            onClose();
+          } catch (err: any) {
+            console.error(err);
+            toast.error(err.message || 'Erro ao salvar dados');
+          } finally {
+            setUploading(false);
+          }
+        },
+      });
+
+      // Iniciar o upload TUS
+      upload.start();
 
     } catch (error: any) {
-      console.error('Upload error:', error);
-      toast.error(error.message || 'Erro ao fazer upload', {
-        className: 'glass-card border border-white/10'
-      });
-    } finally {
+      console.error('Setup error:', error);
+      toast.error(error.message);
       setUploading(false);
-      setProgress(0);
-      setUploadStep('');
     }
   };
 
+  // ... (o resto do componente: resetForm, handleClose e o return JSX permanecem iguais)
+  // Certifique-se apenas de que a renderização do formulário está igual
+  
+  // (Omitindo o JSX aqui pois ele não precisa mudar, apenas a lógica do handleSubmit)
+  
+  // ...
   const resetForm = () => {
     setTitle('');
     setVideoFile(null);
@@ -187,7 +197,8 @@ export function UploadModal({ isOpen, onClose, onSuccess }: UploadModalProps) {
   };
 
   return (
-    <AnimatePresence>
+      // ... Seu JSX original aqui ...
+      <AnimatePresence>
       {isOpen && (
         <motion.div
           className="fixed inset-0 z-50 flex items-center justify-center p-4"
