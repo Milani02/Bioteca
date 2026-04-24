@@ -1,13 +1,10 @@
-import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  X, 
-  Folder, 
-  FolderOpen, 
-  LogOut, 
-  Video,
-  Plus
-} from 'lucide-react';
-import { cn } from '@/lib/utils';
+  Sheet, 
+  SheetContent, 
+  SheetHeader, 
+  SheetTitle 
+} from '@/components/ui/sheet';
+import { Home, ListVideo, Plus, LogOut } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Playlist } from '@/lib/supabase';
 import logo from '@/assets/bioteca_logo.png';
@@ -18,7 +15,7 @@ interface MobileDrawerProps {
   playlists: Playlist[];
   selectedPlaylist: string | null;
   onSelectPlaylist: (id: string | null, title: string) => void;
-  onCreatePlaylist?: () => void;
+  onCreatePlaylist: () => void;
 }
 
 export function MobileDrawer({
@@ -29,133 +26,78 @@ export function MobileDrawer({
   onSelectPlaylist,
   onCreatePlaylist
 }: MobileDrawerProps) {
-  const { profile, signOut, isAdmin } = useAuth();
-
-  const handleLogout = async () => {
-    await signOut();
-    window.location.href = '/';
-  };
-
-  const handleSelectPlaylist = (id: string | null, title: string) => {
-    onSelectPlaylist(id, title);
-    onClose();
-  };
+  const { signOut, user, profile } = useAuth();
 
   return (
-    <AnimatePresence>
-      {isOpen && (
-        <>
-          {/* Backdrop */}
-          <motion.div
-            className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm md:hidden"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={onClose}
-          />
+    <Sheet open={isOpen} onOpenChange={onClose}>
+      <SheetContent side="left" className="w-[280px] bg-zinc-950 border-r border-white/5 p-0 text-white">
+        <div className="flex flex-col h-full bg-black/60 backdrop-blur-2xl">
+          <SheetHeader className="p-6 pb-2 text-left">
+            <img src={logo} alt="Bioteca" className="h-6 w-fit mb-4" />
+            <SheetTitle className="text-white/40 text-[10px] uppercase tracking-[0.2em] font-bold">
+              Navegação
+            </SheetTitle>
+          </SheetHeader>
 
-          {/* Drawer */}
-          <motion.aside
-            className="fixed left-0 top-0 bottom-0 z-50 w-72 glass-sidebar flex flex-col md:hidden"
-            initial={{ x: '-100%' }}
-            animate={{ x: 0 }}
-            exit={{ x: '-100%' }}
-            transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-          >
-            {/* Header */}
-            <div className="flex items-center justify-between p-4 border-b border-white/10">
-              <img src={logo} alt="Bioteca" className="h-8" />
-              <motion.button
-                onClick={onClose}
-                className="p-2 rounded-xl hover:bg-white/10 transition-colors"
-                whileHover={{ scale: 1.1 }}
-                whileTap={{ scale: 0.9 }}
+          <div className="flex-1 overflow-y-auto px-4 space-y-6 mt-4">
+            <nav className="space-y-1">
+              <button
+                onClick={() => {
+                  onSelectPlaylist(null, 'Todos os Vídeos');
+                  onClose();
+                }}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-all ${
+                  selectedPlaylist === null
+                    ? 'bg-primary text-white font-bold'
+                    : 'text-white/50'
+                }`}
               >
-                <X className="w-5 h-5 text-foreground" />
-              </motion.button>
-            </div>
-
-            {/* Navigation */}
-            <nav className="flex-1 p-4 overflow-y-auto scrollbar-glass">
-              {/* All Videos */}
-              <motion.button
-                onClick={() => handleSelectPlaylist(null, 'Todos os Vídeos')}
-                className={cn(
-                  'w-full flex items-center gap-3 p-3 rounded-xl transition-all duration-200',
-                  selectedPlaylist === null 
-                    ? 'bg-primary/20 text-primary' 
-                    : 'hover:bg-white/10 text-foreground'
-                )}
-                whileTap={{ scale: 0.98 }}
-              >
-                <Video className="w-5 h-5 flex-shrink-0" />
-                <span className="font-semibold truncate">Todos os Vídeos</span>
-              </motion.button>
-
-              {/* Playlists Section */}
-              <div className="mt-6">
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
-                    Playlists
-                  </span>
-                  {isAdmin && onCreatePlaylist && (
-                    <motion.button
-                      onClick={() => {
-                        onCreatePlaylist();
-                        onClose();
-                      }}
-                      className="p-1 hover:bg-white/10 rounded-lg transition-colors"
-                      whileHover={{ scale: 1.1 }}
-                      whileTap={{ scale: 0.95 }}
-                    >
-                      <Plus className="w-4 h-4 text-muted-foreground" />
-                    </motion.button>
-                  )}
-                </div>
-
-                <div className="space-y-1">
-                  {playlists.map((playlist) => (
-                    <motion.button
-                      key={playlist.id}
-                      onClick={() => handleSelectPlaylist(playlist.id, playlist.title)}
-                      className={cn(
-                        'w-full flex items-center gap-3 p-3 rounded-xl transition-all duration-200',
-                        selectedPlaylist === playlist.id 
-                          ? 'bg-primary/20 text-primary' 
-                          : 'hover:bg-white/10 text-foreground'
-                      )}
-                      whileTap={{ scale: 0.98 }}
-                    >
-                      {selectedPlaylist === playlist.id ? (
-                        <FolderOpen className="w-5 h-5 flex-shrink-0" />
-                      ) : (
-                        <Folder className="w-5 h-5 flex-shrink-0" />
-                      )}
-                      <span className="font-medium truncate">{playlist.title}</span>
-                    </motion.button>
-                  ))}
-                </div>
-              </div>
+                <Home className="w-5 h-5" />
+                Início
+              </button>
             </nav>
 
-            {/* Footer */}
-            <div className="p-4 border-t border-white/10">
-              <div className="text-xs font-bold text-primary mb-3">
-                PERFIL: {profile?.role === 'admin' ? 'ADMIN' : 'COMUM'}
-              </div>
-              
-              <motion.button
-                onClick={handleLogout}
-                className="flex items-center gap-2 text-destructive hover:bg-destructive/10 p-2 rounded-lg transition-colors w-full"
-                whileTap={{ scale: 0.98 }}
-              >
-                <LogOut className="w-5 h-5" />
-                <span className="font-semibold">Sair</span>
-              </motion.button>
+            <div>
+              <p className="px-4 text-[10px] font-bold text-white/30 uppercase tracking-[0.2em] mb-3">
+                Trilhas
+              </p>
+              <nav className="space-y-1">
+                {playlists.map((playlist) => (
+                  <button
+                    key={playlist.id}
+                    onClick={() => {
+                      onSelectPlaylist(playlist.id, playlist.title);
+                      onClose();
+                    }}
+                    className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm transition-all ${
+                      selectedPlaylist === playlist.id
+                        ? 'bg-white/10 text-white font-semibold'
+                        : 'text-white/50'
+                    }`}
+                  >
+                    <ListVideo className="w-4 h-4 flex-shrink-0" />
+                    <span className="truncate">{playlist.title}</span>
+                  </button>
+                ))}
+              </nav>
             </div>
-          </motion.aside>
-        </>
-      )}
-    </AnimatePresence>
+          </div>
+
+          <div className="p-4 mt-auto border-t border-white/5">
+            <div className="flex items-center gap-3 p-3 bg-white/5 rounded-2xl">
+              <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-xs font-bold">
+                {user?.email?.charAt(0).toUpperCase()}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-semibold truncate">{user?.email?.split('@')[0]}</p>
+              </div>
+              <button onClick={signOut} className="text-white/40 hover:text-red-400">
+                <LogOut className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      </SheetContent>
+    </Sheet>
   );
 }

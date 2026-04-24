@@ -1,9 +1,10 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
-import { ProtectedRoute } from "@/components/ProtectedRoute"; // Importe o protetor
+import { ProtectedRoute } from "@/components/ProtectedRoute";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import NotFound from "./pages/NotFound";
+import Welcome from "./pages/Welcome";
 
 const App = () => (
   <AuthProvider>
@@ -11,7 +12,17 @@ const App = () => (
       <Routes>
         <Route path="/" element={<Login />} />
         
-        {/* Rota Protegida: Se tentar entrar aqui sem login, vai para "/" */}
+        {/* Rota de Boas-vindas protegida */}
+        <Route 
+          path="/welcome" 
+          element={
+            <ProtectedRoute>
+              <Welcome />
+            </ProtectedRoute>
+          } 
+        />
+        
+        {/* Rota do Dashboard */}
         <Route 
           path="/dashboard" 
           element={
