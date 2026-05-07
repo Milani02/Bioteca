@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { 
@@ -107,37 +107,41 @@ export default function Dashboard() {
     }
   };
 
-  // Filtragem e ordenação
-  const filteredVideos = videos
-    .filter(video => 
-      video.title.toLowerCase().includes(searchQuery.toLowerCase())
-    )
-    .sort((a, b) => {
-      switch (sortOption) {
-        case 'oldest':
-          return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-        case 'title-asc':
-          return a.title.localeCompare(b.title);
-        case 'newest':
-        default:
-          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-      }
-    });
+  // Memoização da filtragem e ordenação (só recalcula se vídeos, busca ou ordenação mudarem)
+  const filteredVideos = useMemo(() => {
+    return videos
+      .filter(video => 
+        video.title.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+      .sort((a, b) => {
+        switch (sortOption) {
+          case 'oldest':
+            return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+          case 'title-asc':
+            return a.title.localeCompare(b.title);
+          case 'newest':
+          default:
+            return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+        }
+      });
+  }, [videos, searchQuery, sortOption]);
 
-  // Vídeo de destaque para o Banner (o mais recente)
-  const featuredVideo = filteredVideos.length > 0 
-    ? [...filteredVideos].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0] 
-    : null;
+  // Memoização do vídeo de destaque
+  const featuredVideo = useMemo(() => {
+    return filteredVideos.length > 0 
+      ? [...filteredVideos].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0] 
+      : null;
+  }, [filteredVideos]);
 
-  const handlePlaylistSelect = (id: string | null, title: string) => {
+  const handlePlaylistSelect = useCallback((id: string | null, title: string) => {
     setSelectedPlaylist(id);
     setCurrentTitle(title);
-  };
+  }, []);
 
-  const handlePlayVideo = (video: Video) => {
+  const handlePlayVideo = useCallback((video: Video) => {
     setSelectedVideo(video);
     setIsPlayerOpen(true);
-  };
+  }, []);
 
   const handleDeleteVideo = async (video: Video) => {
     if (!confirm(`Tem certeza que deseja excluir "${video.title}"?`)) return;
@@ -290,7 +294,7 @@ export default function Dashboard() {
               </div>
             )}
 
-            {/* Grelha de Vídeos */}
+            {/* Grelha de Vídeos sem o layout pesado */}
             <div className="px-4 md:px-12 pt-4">
               <div className="flex items-center justify-between mb-8 border-l-4 border-primary pl-4">
                 <h2 className="text-xl md:text-4xl font-black text-white tracking-tight uppercase">
@@ -299,11 +303,8 @@ export default function Dashboard() {
               </div>
 
               {filteredVideos.length > 0 ? (
-                <motion.div 
-                  className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6"
-                  layout
-                >
-                  <AnimatePresence mode="popLayout">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6">
+                  <AnimatePresence>
                     {filteredVideos.map((video, index) => (
                       <VideoCard
                         key={video.id}
@@ -314,7 +315,7 @@ export default function Dashboard() {
                       />
                     ))}
                   </AnimatePresence>
-                </motion.div>
+                </div>
               ) : (
                 <div className="flex flex-col items-center justify-center py-20 text-center glass-card rounded-3xl mx-auto max-w-2xl border border-white/5">
                   <VideoIcon className="w-16 h-16 text-white/20 mb-6" />

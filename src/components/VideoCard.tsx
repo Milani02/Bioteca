@@ -1,4 +1,4 @@
-import { forwardRef } from 'react';
+import { forwardRef, memo } from 'react';
 import { motion } from 'framer-motion';
 import { Play, Trash2, Calendar, Film } from 'lucide-react';
 import { Video } from '@/lib/supabase';
@@ -12,8 +12,8 @@ interface VideoCardProps {
   index: number;
 }
 
-// Envolvendo o componente com forwardRef para permitir que o Framer Motion acesse o elemento DOM
-export const VideoCard = forwardRef<HTMLDivElement, VideoCardProps>(
+// Envolvendo o componente com memo e forwardRef para otimização extrema
+export const VideoCard = memo(forwardRef<HTMLDivElement, VideoCardProps>(
   ({ video, onPlay, onDelete, index }, ref) => {
     const { isAdmin } = useAuth();
     
@@ -29,7 +29,7 @@ export const VideoCard = forwardRef<HTMLDivElement, VideoCardProps>(
 
     return (
       <motion.div
-        ref={ref} // Atribuindo a ref ao elemento animado principal
+        ref={ref}
         initial={{ opacity: 0, y: 30, scale: 0.95 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         exit={{ opacity: 0, y: -20, scale: 0.95 }}
@@ -38,7 +38,6 @@ export const VideoCard = forwardRef<HTMLDivElement, VideoCardProps>(
           delay: index * 0.05,
           ease: [0.22, 1, 0.36, 1]
         }}
-        layout
       >
         <GlassCard 
           className="overflow-hidden group cursor-pointer video-card-glow"
@@ -107,6 +106,6 @@ export const VideoCard = forwardRef<HTMLDivElement, VideoCardProps>(
       </motion.div>
     );
   }
-);
+));
 
 VideoCard.displayName = "VideoCard";
