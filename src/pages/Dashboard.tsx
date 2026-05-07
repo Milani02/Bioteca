@@ -269,7 +269,7 @@ export default function Dashboard() {
                   </h1>
                   
                   <p className="text-gray-300 text-sm md:text-xl mb-8 max-w-2xl drop-shadow-md line-clamp-2 md:line-clamp-3 font-light">
-                    {featuredVideo.description || "Aceda agora a este conteúdo exclusivo na plataforma Bioteca da Biodinâmica."}
+                    {featuredVideo.description || "Assista agora a este conteúdo exclusivo."}
                   </p>
                   
                   <div className="flex items-center gap-4">
