@@ -96,6 +96,7 @@ const VideoPlayerModal = ({ video, isOpen, onClose }: VideoPlayerModalProps) => 
                 playsInline
                 preload="metadata" // [CRÍTICO] Não carregar o buffer inteiro de cara
                 controlsList="nodownload"
+                onContextMenu={(e) => e.preventDefault()} // <-- Bloqueio do clique direito adicionado aqui
               >
                 Seu navegador não suporta vídeos HTML5.
               </video>
