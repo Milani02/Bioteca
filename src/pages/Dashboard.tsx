@@ -1,152 +1,218 @@
 import React, { useState, useEffect, useMemo, useCallback, lazy, Suspense } from 'react';
-import { motion } from 'framer-motion';
-import { useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query'; // [CRÍTICO] Adicionado React Query
-import { 
-  Search, SortAsc, Upload as UploadIcon, Video as VideoIcon, 
-  Loader2, Play, Info 
-} from 'lucide-react';
-import { Sidebar } from '@/components/Sidebar';
+import { motion, AnimatePresence } from 'framer-motion';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
+import { Play, Video as VideoIcon } from 'lucide-react';
+import { Navbar } from '@/components/Navbar';
+import { VideoRow } from '@/components/VideoRow';
+import { VideoCard } from '@/components/VideoCard';
 import { MobileDrawer } from '@/components/MobileDrawer';
 import { MobileHeader } from '@/components/MobileHeader';
-import { VideoCard } from '@/components/VideoCard';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase, Video } from '@/lib/supabase';
+import { Video } from '@/lib/supabase';
+import { videoService } from '@/services/videoService';
+import { playlistService } from '@/services/playlistService';
+import { toAppError } from '@/lib/errors';
 import { toast } from 'sonner';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 
-// [CRÍTICO] Componentes pesados agora são Lazy Loaded
 const AnimatedBackground = lazy(() => import('@/components/AnimatedBackground'));
 const VideoPlayerModal = lazy(() => import('@/components/VideoPlayerModal'));
-const UploadModal = lazy(() => import('@/components/UploadModal').then(m => ({ default: m.UploadModal })));
-const CreatePlaylistModal = lazy(() => import('@/components/CreatePlaylistModal').then(m => ({ default: m.CreatePlaylistModal })));
+const UploadModal = lazy(() =>
+  import('@/components/UploadModal').then((m) => ({ default: m.UploadModal }))
+);
+const CreatePlaylistModal = lazy(() =>
+  import('@/components/CreatePlaylistModal').then((m) => ({ default: m.CreatePlaylistModal }))
+);
 
-type SortOption = 'newest' | 'oldest' | 'title-asc';
+/* ── Skeletons ── */
+function RowSkeleton() {
+  return (
+    <div className="mb-10 px-4 md:px-10 xl:px-16">
+      <div className="flex items-center gap-3 mb-3">
+        <div className="w-1 h-5 skeleton rounded-full" />
+        <div className="h-4 skeleton rounded-full w-36" />
+      </div>
+      <div className="flex gap-3">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div key={i} className="flex-none w-36 sm:w-44 md:w-48 lg:w-52 xl:w-56">
+            <div className="aspect-video skeleton rounded-xl" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function HeroSkeleton() {
+  return (
+    <div className="relative h-[82vh] min-h-[560px] skeleton overflow-hidden mb-2">
+      <div className="absolute bottom-0 left-0 p-8 md:p-16 space-y-4">
+        <div className="h-12 skeleton rounded-xl w-96 bg-white/10" />
+        <div className="h-12 skeleton rounded-full w-40 bg-white/10" />
+      </div>
+    </div>
+  );
+}
 
 export default function Dashboard() {
-  const [searchQuery, setSearchQuery] = useState('');
-  const [debouncedSearch, setDebouncedSearch] = useState(''); // [CRÍTICO] Debounce
-  const [sortOption, setSortOption] = useState<SortOption>('newest');
+  const [searchParams] = useSearchParams();
+  const initialSearch = searchParams.get('search') ?? '';
+
+  const [searchQuery, setSearchQuery] = useState(initialSearch);
+  const [debouncedSearch, setDebouncedSearch] = useState(initialSearch);
   const [selectedPlaylist, setSelectedPlaylist] = useState<string | null>(null);
-  const [currentTitle, setCurrentTitle] = useState('Todos os Vídeos');
-  const [selectedVideo, setSelectedVideo] = useState<Video | null>(null);
-  
-  // Controles de Modais
+  const [heroIndex, setHeroIndex] = useState(0);
+  const [heroVideo, setHeroVideo] = useState<Video | null>(null);
   const [isPlayerOpen, setIsPlayerOpen] = useState(false);
+  const [videoToDelete, setVideoToDelete] = useState<Video | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [isCreatePlaylistOpen, setIsCreatePlaylistOpen] = useState(false);
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
 
-  const { loading: authLoading, user, isAdmin } = useAuth();
+  const { loading: authLoading, user, isAdmin, profile, signOut } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
     if (!authLoading && !user) navigate('/');
   }, [authLoading, user, navigate]);
 
-  // [CRÍTICO] Debounce effect
+  /* ── Debounce search ── */
   useEffect(() => {
-    const timer = setTimeout(() => setDebouncedSearch(searchQuery), 300);
-    return () => clearTimeout(timer);
+    const t = setTimeout(() => setDebouncedSearch(searchQuery), 300);
+    return () => clearTimeout(t);
   }, [searchQuery]);
 
-  // [CRÍTICO] React Query para Playlists (Cache Inteligente)
+  /* ── Queries ── */
   const { data: playlists = [], refetch: refetchPlaylists } = useQuery({
     queryKey: ['playlists'],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('playlists').select('*').order('title', { ascending: true });
-      if (error) throw error;
-      return data || [];
-    },
-    staleTime: 1000 * 60 * 5, // 5 minutos de cache
+    queryFn: () => playlistService.fetchAll(),
+    staleTime: 1000 * 60 * 5,
   });
 
-  // [CRÍTICO] React Query para Vídeos (Evita queries sequenciais repetidas)
-  const { data: videos = [], isLoading: videosLoading, refetch: refetchVideos } = useQuery({
-    queryKey: ['videos', selectedPlaylist],
-    queryFn: async () => {
-      let query = supabase.from('videos').select('*');
-      if (selectedPlaylist) {
-        const { data: relations } = await supabase.from('playlist_items').select('video_id').eq('playlist_id', selectedPlaylist);
-        if (relations && relations.length > 0) {
-          query = query.in('id', relations.map(r => r.video_id));
-        } else {
-          return [];
-        }
-      }
-      const { data, error } = await query;
-      if (error) throw error;
-      return data || [];
-    },
-    staleTime: 1000 * 60 * 2, // 2 minutos
+  const { data: playlistItems = [] } = useQuery({
+    queryKey: ['playlist-items'],
+    queryFn: () => playlistService.fetchAllItems(),
+    staleTime: 1000 * 60 * 10,
   });
 
-  // [CRÍTICO] Memoização aplicada ao valor com Debounce (e não recalculando a cada tecla)
-  const filteredVideos = useMemo(() => {
-    return videos
-      .filter(video => 
-        video.title.toLowerCase().includes(debouncedSearch.toLowerCase())
-      )
-      .sort((a, b) => {
-        switch (sortOption) {
-          case 'oldest': return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-          case 'title-asc': return a.title.localeCompare(b.title);
-          case 'newest': default: return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-        }
-      });
-  }, [videos, debouncedSearch, sortOption]);
+  const { data: videoResult, isLoading: videosLoading, refetch: refetchVideos } = useQuery({
+    queryKey: ['videos', debouncedSearch],
+    queryFn: () => videoService.fetchPaginated({ search: debouncedSearch || undefined }),
+    staleTime: 1000 * 60 * 2,
+    placeholderData: (prev) => prev,
+  });
 
-  const featuredVideo = useMemo(() => {
-    return filteredVideos.length > 0 
-      ? [...filteredVideos].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0] 
-      : null;
-  }, [filteredVideos]);
+  const videos = videoResult?.data ?? [];
 
-  const handlePlaylistSelect = useCallback((id: string | null, title: string) => {
+  /* ── Hero ── */
+  const heroVideos = useMemo(() => {
+    const withThumb = videos.filter(v => v.thumbnail_url).slice(0, 5);
+    return withThumb.length > 0 ? withThumb : videos.slice(0, 1);
+  }, [videos]);
+
+  useEffect(() => {
+    if (heroVideos.length > 0) setHeroIndex(0);
+  }, [heroVideos.length]);
+
+  useEffect(() => {
+    if (heroVideos.length <= 1) return;
+    const t = setInterval(() => setHeroIndex(i => (i + 1) % heroVideos.length), 8000);
+    return () => clearInterval(t);
+  }, [heroIndex, heroVideos.length]);
+
+  const currentHero = heroVideos[heroIndex] ?? null;
+
+  /* ── Videos per playlist ── */
+  const videosByPlaylist = useMemo(() => {
+    const map = new Map<string, Video[]>();
+    playlists.forEach(playlist => {
+      const ids = new Set(
+        playlistItems
+          .filter(pi => pi.playlist_id === playlist.id)
+          .map(pi => pi.video_id)
+      );
+      map.set(playlist.id, videos.filter(v => ids.has(v.id)));
+    });
+    return map;
+  }, [playlists, playlistItems, videos]);
+
+  /* ── Handlers ── */
+  const handlePlaylistSelect = useCallback((id: string | null, _title: string) => {
     setSelectedPlaylist(id);
-    setCurrentTitle(title);
+    setIsMobileDrawerOpen(false);
+    setTimeout(() => {
+      const el = id
+        ? document.getElementById(`row-${id}`)
+        : null;
+      if (el) window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - 72, behavior: 'smooth' });
+      else window.scrollTo({ top: 0, behavior: 'smooth' });
+    }, 380);
   }, []);
 
-  const handlePlayVideo = useCallback((video: Video) => {
-    setSelectedVideo(video);
-    setIsPlayerOpen(true);
-  }, []);
+  const handleDeleteVideo = (video: Video) => {
+    setVideoToDelete(video);
+  };
 
-  const handleDeleteVideo = async (video: Video) => {
-    if (!confirm(`Tem certeza que deseja excluir "${video.title}"?`)) return;
+  const confirmDeleteVideo = async () => {
+    if (!videoToDelete) return;
+    setIsDeleting(true);
     try {
-      if (video.storage_path) {
-        await supabase.storage.from('videos').remove([video.storage_path]);
-      }
-      await supabase.from('videos').delete().eq('id', video.id);
+      await videoService.remove(videoToDelete);
       toast.success('Vídeo removido');
       refetchVideos();
-    } catch (error) {
-      toast.error('Erro ao excluir vídeo');
+    } catch (err) {
+      toast.error(toAppError(err).message);
+    } finally {
+      setIsDeleting(false);
+      setVideoToDelete(null);
     }
   };
 
   if (authLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-black">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        <motion.div
+          className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full"
+          animate={{ rotate: 360 }}
+          transition={{ duration: 0.9, repeat: Infinity, ease: 'linear' }}
+        />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen flex relative bg-black">
+    <motion.div
+      className="min-h-screen bg-black relative"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.3 }}
+    >
       <Suspense fallback={null}>
         <AnimatedBackground />
       </Suspense>
-      
-      <Sidebar
-        selectedPlaylist={selectedPlaylist}
-        onSelectPlaylist={handlePlaylistSelect}
-        onCreatePlaylist={() => setIsCreatePlaylistOpen(true)}
+
+      <Navbar
         playlists={playlists}
-        onRefreshPlaylists={refetchPlaylists}
+        isAdmin={isAdmin}
+        onUploadClick={() => setIsUploadOpen(true)}
+        onCreatePlaylist={() => setIsCreatePlaylistOpen(true)}
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+        userEmail={user?.email ?? null}
+        userRole={profile?.role ?? null}
+        onSignOut={signOut}
       />
 
+      <MobileHeader
+        onMenuClick={() => setIsMobileDrawerOpen(true)}
+        onUploadClick={() => setIsUploadOpen(true)}
+        isAdmin={isAdmin}
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+      />
       <MobileDrawer
         isOpen={isMobileDrawerOpen}
         onClose={() => setIsMobileDrawerOpen(false)}
@@ -156,149 +222,221 @@ export default function Dashboard() {
         onCreatePlaylist={() => setIsCreatePlaylistOpen(true)}
       />
 
-      <main className="flex-1 overflow-y-auto scrollbar-glass min-h-screen pb-20">
-        <MobileHeader
-          onMenuClick={() => setIsMobileDrawerOpen(true)}
-          onUploadClick={() => setIsUploadOpen(true)}
-          isAdmin={isAdmin}
-          searchQuery={searchQuery}
-          onSearchChange={setSearchQuery} // A UI continua responsiva, mas a filtragem é debounced
-        />
-
-        {/* Header Desktop */}
-        <header className="sticky top-4 z-40 glass-card mx-4 mt-4 mb-0 rounded-full px-6 py-3 hidden md:flex items-center justify-between border border-white/10 shadow-2xl backdrop-blur-md bg-black/40">
-          <div className="flex-1 max-w-md relative">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-white/40" />
-            <input
-              type="search"
-              placeholder="Pesquisar treinamentos..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-transparent border-none text-white focus:outline-none pl-12 py-2 placeholder:text-white/30"
-            />
-          </div>
-
-          <div className="flex items-center gap-4">
-            <div className="relative">
-              <SortAsc className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" />
-              <select
-                value={sortOption}
-                onChange={(e) => setSortOption(e.target.value as SortOption)}
-                className="bg-white/5 border border-white/10 text-white text-sm rounded-full pl-10 pr-4 py-2 appearance-none cursor-pointer hover:bg-white/10"
-              >
-                <option value="newest" className="bg-zinc-900">Mais recentes</option>
-                <option value="oldest" className="bg-zinc-900">Mais antigos</option>
-                <option value="title-asc" className="bg-zinc-900">Título A→Z</option>
-              </select>
-            </div>
-
-            {isAdmin && (
-              <button
-                onClick={() => setIsUploadOpen(true)}
-                className="flex items-center gap-2 px-6 py-2 bg-primary text-white font-bold rounded-full hover:bg-primary/90 transition-transform hover:scale-105"
-              >
-                <UploadIcon className="w-4 h-4" />
-                <span>Novo Vídeo</span>
-              </button>
-            )}
-          </div>
-        </header>
-
+      <main className="relative z-10 pb-20">
         {videosLoading ? (
-          <div className="flex items-center justify-center py-40">
-            <Loader2 className="w-10 h-10 animate-spin text-primary" />
-          </div>
+          <>
+            <HeroSkeleton />
+            <RowSkeleton />
+            <RowSkeleton />
+          </>
+        ) : debouncedSearch ? (
+          <SearchResults
+            query={debouncedSearch}
+            videos={videos}
+            onDelete={isAdmin ? handleDeleteVideo : undefined}
+          />
         ) : (
           <>
-            {/* Hero Section */}
-            {!debouncedSearch && featuredVideo && (
-              <div className="relative w-full h-[45vh] md:h-[65vh] min-h-[380px] md:min-h-[500px] mb-8 md:mb-12 shadow-2xl">
-                <div 
-                  className="absolute inset-0 bg-cover bg-center opacity-60"
-                  style={{ 
-                    backgroundImage: featuredVideo.thumbnail_url 
-                      ? `url(${featuredVideo.thumbnail_url})` 
-                      : 'url("https://images.unsplash.com/photo-1516321318423-f06f85e504b3?q=80&w=2070")' 
-                  }}
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-black via-black/30 to-transparent" />
-                <div className="absolute inset-0 bg-gradient-to-r from-black via-black/40 to-transparent md:w-3/4" />
+            {/* ── Hero ── */}
+            {currentHero && (
+              <div className="relative h-[82vh] min-h-[560px] overflow-hidden">
+                <AnimatePresence mode="wait">
+                  <motion.div
+                    key={currentHero.id}
+                    className="absolute inset-0"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.9 }}
+                  >
+                    <motion.div
+                      className="absolute inset-0 bg-cover bg-center"
+                      style={{
+                        backgroundImage: currentHero.thumbnail_url
+                          ? `url(${currentHero.thumbnail_url})`
+                          : undefined,
+                        backgroundColor: !currentHero.thumbnail_url ? '#0a0f0a' : undefined,
+                      }}
+                      initial={{ scale: 1 }}
+                      animate={{ scale: 1.06 }}
+                      transition={{ duration: 8, ease: 'linear' }}
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-r from-black via-black/55 to-transparent" />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black via-black/10 to-black/30" />
+                  </motion.div>
+                </AnimatePresence>
 
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.5 }}
-                  className="absolute bottom-0 left-0 p-6 md:p-16 max-w-4xl z-10"
-                >
-                  <h1 className="text-3xl md:text-7xl font-black mb-3 md:mb-5 tracking-tight text-white drop-shadow-2xl">
-                    {featuredVideo.title}
-                  </h1>
-                  <div className="flex items-center gap-4 mt-8">
-                    <button 
-                      onClick={() => handlePlayVideo(featuredVideo)}
-                      className="group flex items-center gap-3 px-6 md:px-10 py-3 md:py-4 bg-white text-black rounded-full font-bold hover:scale-105 transition-all shadow-xl"
+                {/* Hero content */}
+                <div className="absolute bottom-0 left-0 p-8 md:p-16 max-w-3xl z-10">
+                  <AnimatePresence mode="wait">
+                    <motion.div
+                      key={currentHero.id + '-text'}
+                      initial={{ opacity: 0, y: 28 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -16 }}
+                      transition={{ duration: 0.65, ease: [0.22, 1, 0.36, 1] }}
                     >
-                      <Play className="w-5 h-5 fill-current" /> Assistir Agora
-                    </button>
+                      <h1 className="text-4xl md:text-6xl lg:text-7xl font-black text-white leading-none tracking-tight mb-6 drop-shadow-2xl">
+                        {currentHero.title}
+                      </h1>
+                      <div className="flex items-center gap-3 flex-wrap">
+                        <motion.button
+                          onClick={() => { setHeroVideo(currentHero); setIsPlayerOpen(true); }}
+                          className="flex items-center gap-3 px-8 py-3.5 bg-white text-black rounded-full font-extrabold text-sm hover:bg-white/90 shadow-2xl transition-colors"
+                          whileHover={{ scale: 1.04 }}
+                          whileTap={{ scale: 0.97 }}
+                        >
+                          <Play className="w-5 h-5 fill-current flex-shrink-0" />
+                          Assistir Agora
+                        </motion.button>
+                        <motion.button
+                          onClick={() => navigate(`/video/${currentHero.id}`)}
+                          className="flex items-center gap-2 px-6 py-3.5 rounded-full font-bold text-sm text-white border border-white/25 hover:bg-white/10 transition-colors"
+                          whileHover={{ scale: 1.04 }}
+                          whileTap={{ scale: 0.97 }}
+                        >
+                          Mais Detalhes
+                        </motion.button>
+                      </div>
+                    </motion.div>
+                  </AnimatePresence>
+                </div>
+
+                {/* Indicators */}
+                {heroVideos.length > 1 && (
+                  <div className="absolute bottom-8 right-8 md:right-16 flex items-center gap-2 z-20">
+                    {heroVideos.map((_, i) => (
+                      <button
+                        key={i}
+                        onClick={() => setHeroIndex(i)}
+                        className={`h-[3px] rounded-full transition-all duration-500 ${
+                          i === heroIndex ? 'w-8 bg-white' : 'w-3 bg-white/30 hover:bg-white/50'
+                        }`}
+                      />
+                    ))}
                   </div>
-                </motion.div>
+                )}
               </div>
             )}
 
-            {/* Grelha de Vídeos */}
-            <div className="px-4 md:px-12 pt-4">
-              <div className="flex items-center justify-between mb-8 border-l-4 border-primary pl-4">
-                <h2 className="text-xl md:text-4xl font-black text-white tracking-tight uppercase">
-                  {debouncedSearch ? `Busca: ${debouncedSearch}` : currentTitle}
-                </h2>
-              </div>
+            {/* ── Rows ── */}
+            <div className="pt-2">
+              <VideoRow
+                title="Em Alta"
+                videos={videos}
+                onDelete={isAdmin ? handleDeleteVideo : undefined}
+              />
 
-              {filteredVideos.length > 0 ? (
-                // [CRÍTICO] Retirado AnimatePresence e motion.div em listas, trocado por grid CSS padrão.
-                // Se desejar virtualização total futuramente, a base da grid já está renderizando muito mais rápido.
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6">
-                  {filteredVideos.map((video, index) => (
-                    <VideoCard
-                      key={video.id}
-                      video={video}
-                      index={index}
-                      onPlay={handlePlayVideo}
-                      onDelete={isAdmin ? handleDeleteVideo : undefined}
-                    />
-                  ))}
-                </div>
-              ) : (
-                <div className="flex flex-col items-center justify-center py-20 text-center glass-card rounded-3xl mx-auto max-w-2xl border border-white/5">
-                  <VideoIcon className="w-16 h-16 text-white/20 mb-6" />
-                  <h3 className="text-2xl font-bold text-white mb-2">Sem resultados</h3>
-                </div>
+              {playlists.map(playlist => (
+                <VideoRow
+                  key={playlist.id}
+                  id={`row-${playlist.id}`}
+                  title={playlist.title}
+                  videos={videosByPlaylist.get(playlist.id) ?? []}
+                  onDelete={isAdmin ? handleDeleteVideo : undefined}
+                />
+              ))}
+
+              {videos.length === 0 && (
+                <motion.div
+                  initial={{ opacity: 0, y: 16 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="flex flex-col items-center justify-center py-32 text-center px-4"
+                >
+                  <div className="w-20 h-20 rounded-full bg-white/[0.04] border border-white/[0.08] flex items-center justify-center mb-6">
+                    <VideoIcon className="w-9 h-9 text-white/15" />
+                  </div>
+                  <h3 className="text-lg font-bold text-white/60 mb-2">Nenhum vídeo publicado ainda</h3>
+                  <p className="text-sm text-white/25">Os vídeos aparecerão aqui após serem enviados.</p>
+                </motion.div>
               )}
             </div>
           </>
         )}
       </main>
 
-      {/* Lazy Loaded Modals isolados do ciclo de renderização do Dashboard */}
+      <ConfirmDialog
+        isOpen={!!videoToDelete}
+        title="Excluir vídeo"
+        description={`"${videoToDelete?.title ?? ''}" será removido permanentemente. Esta ação não pode ser desfeita.`}
+        confirmLabel="Excluir vídeo"
+        isLoading={isDeleting}
+        onConfirm={confirmDeleteVideo}
+        onCancel={() => setVideoToDelete(null)}
+      />
+
       <Suspense fallback={null}>
         {isPlayerOpen && (
           <VideoPlayerModal
-            video={selectedVideo}
+            video={heroVideo}
             isOpen={isPlayerOpen}
-            onClose={() => {
-              setIsPlayerOpen(false);
-              setSelectedVideo(null);
-            }}
+            onClose={() => { setIsPlayerOpen(false); setHeroVideo(null); }}
           />
         )}
-        
         {isUploadOpen && (
-          <UploadModal isOpen={isUploadOpen} onClose={() => setIsUploadOpen(false)} onSuccess={refetchVideos} />
+          <UploadModal
+            isOpen={isUploadOpen}
+            onClose={() => setIsUploadOpen(false)}
+            onSuccess={refetchVideos}
+          />
         )}
-
         {isCreatePlaylistOpen && (
-          <CreatePlaylistModal isOpen={isCreatePlaylistOpen} onClose={() => setIsCreatePlaylistOpen(false)} onSuccess={refetchPlaylists} />
+          <CreatePlaylistModal
+            isOpen={isCreatePlaylistOpen}
+            onClose={() => setIsCreatePlaylistOpen(false)}
+            onSuccess={refetchPlaylists}
+          />
         )}
       </Suspense>
-    </div>
+    </motion.div>
+  );
+}
+
+/* ── Search results grid ── */
+interface SearchResultsProps {
+  query: string;
+  videos: Video[];
+  onDelete?: (video: Video) => void;
+}
+
+function SearchResults({ query, videos, onDelete }: SearchResultsProps) {
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      className="px-4 md:px-10 xl:px-16 pt-24 md:pt-20"
+    >
+      <div className="flex items-center gap-3 mb-8">
+        <div className="w-1 h-7 bg-primary rounded-full" />
+        <h2 className="text-xl md:text-3xl font-black text-white tracking-tight">
+          Resultados para{' '}
+          <span className="text-primary">"{query}"</span>
+        </h2>
+        <span className="text-xs text-white/25 font-semibold bg-white/5 px-2.5 py-1 rounded-full ml-1">
+          {videos.length}
+        </span>
+      </div>
+
+      {videos.length > 0 ? (
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-3">
+          {videos.map((video, i) => (
+            <VideoCard
+              key={video.id}
+              video={video}
+              index={i}
+              onDelete={onDelete}
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="flex flex-col items-center justify-center py-24 text-center">
+          <div className="w-16 h-16 rounded-full bg-white/[0.04] border border-white/[0.07] flex items-center justify-center mb-4">
+            <VideoIcon className="w-7 h-7 text-white/15" />
+          </div>
+          <h3 className="text-lg font-bold text-white/50 mb-1">Nenhum resultado</h3>
+          <p className="text-sm text-white/25">Tente outro termo de pesquisa.</p>
+        </div>
+      )}
+    </motion.div>
   );
 }

@@ -2,6 +2,9 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Upload, FileVideo, Loader2, Image as ImageIcon, ChevronDown } from 'lucide-react';
 import { supabase, Playlist } from '@/lib/supabase';
+import { videoService } from '@/services/videoService';
+import { playlistService } from '@/services/playlistService';
+import { toAppError } from '@/lib/errors';
 import { toast } from 'sonner';
 // [NOVO] Importar o TUS
 import * as tus from 'tus-js-client';
@@ -35,8 +38,10 @@ export function UploadModal({ isOpen, onClose, onSuccess }: UploadModalProps) {
   }, [thumbnailFile]);
 
   const loadPlaylists = async () => {
-    const { data } = await supabase.from('playlists').select('*').order('title', { ascending: true });
-    if (data) setPlaylists(data);
+    try {
+      const data = await playlistService.fetchAll();
+      setPlaylists(data);
+    } catch { /* non-critical */ }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -128,27 +133,16 @@ export function UploadModal({ isOpen, onClose, onSuccess }: UploadModalProps) {
 
             // Step 3: Insert video record
             setUploadStep('Salvando registro...');
-            const { data: insertedVideo, error: insertError } = await supabase
-              .from('videos')
-              .insert({
-                title: title.trim(),
-                url: videoUrlData.publicUrl,
-                storage_path: videoFileName,
-                thumbnail_url: thumbnailUrl,
-              })
-              .select()
-              .single();
-
-            if (insertError) throw insertError;
+            const insertedVideo = await videoService.insert({
+              title: title.trim(),
+              url: videoUrlData.publicUrl,
+              storage_path: videoFileName,
+              thumbnail_url: thumbnailUrl,
+            });
 
             // Step 4: Link to playlist
-            if (selectedPlaylist && insertedVideo) {
-              await supabase
-                .from('playlist_items')
-                .insert({
-                  playlist_id: selectedPlaylist,
-                  video_id: insertedVideo.id
-                });
+            if (selectedPlaylist) {
+              await playlistService.addVideo(selectedPlaylist, insertedVideo.id);
             }
 
             setProgress(100);
@@ -156,9 +150,10 @@ export function UploadModal({ isOpen, onClose, onSuccess }: UploadModalProps) {
             resetForm();
             onSuccess();
             onClose();
-          } catch (err: any) {
-            console.error(err);
-            toast.error(err.message || 'Erro ao salvar dados');
+          } catch (err) {
+            const error = toAppError(err);
+            console.error(error);
+            toast.error(error.message);
           } finally {
             setUploading(false);
           }

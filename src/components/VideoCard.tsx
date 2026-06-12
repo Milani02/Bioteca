@@ -1,111 +1,75 @@
-import { forwardRef, memo } from 'react';
+import { memo } from 'react';
 import { motion } from 'framer-motion';
-import { Play, Trash2, Calendar, Film } from 'lucide-react';
+import { Play, Trash2 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { Video } from '@/lib/supabase';
-import { GlassCard } from './GlassCard';
-import { useAuth } from '@/contexts/AuthContext';
 
 interface VideoCardProps {
   video: Video;
-  onPlay: (video: Video) => void;
   onDelete?: (video: Video) => void;
   index: number;
 }
 
-// Envolvendo o componente com memo e forwardRef para otimização extrema
-export const VideoCard = memo(forwardRef<HTMLDivElement, VideoCardProps>(
-  ({ video, onPlay, onDelete, index }, ref) => {
-    const { isAdmin } = useAuth();
-    
-    const formatDate = (dateString: string) => {
-      return new Date(dateString).toLocaleDateString('pt-BR', {
-        day: '2-digit',
-        month: 'short',
-        year: 'numeric'
-      });
-    };
+export const VideoCard = memo(({ video, onDelete, index }: VideoCardProps) => {
+  const navigate = useNavigate();
 
-    const hasThumbnail = video.thumbnail_url && video.thumbnail_url.length > 0;
-
-    return (
-      <motion.div
-        ref={ref}
-        initial={{ opacity: 0, y: 30, scale: 0.95 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        exit={{ opacity: 0, y: -20, scale: 0.95 }}
-        transition={{ 
-          duration: 0.4, 
-          delay: index * 0.05,
-          ease: [0.22, 1, 0.36, 1]
-        }}
-      >
-        <GlassCard 
-          className="overflow-hidden group cursor-pointer video-card-glow"
-          hover
-          onClick={() => onPlay(video)}
-        >
-          {/* Thumbnail */}
-          <div className="relative aspect-video bg-gradient-to-br from-primary/20 to-accent/10 overflow-hidden">
-            {hasThumbnail ? (
-              <motion.img
-                src={video.thumbnail_url}
-                alt={video.title}
-                className="w-full h-full object-cover"
-                whileHover={{ scale: 1.05 }}
-                transition={{ duration: 0.4 }}
-                loading="lazy"
-              />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center">
-                <Film className="w-12 h-12 sm:w-16 sm:h-16 text-primary/40" />
-              </div>
-            )}
-            
-            {/* Play overlay */}
-            <motion.div
-              className="absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
-              whileHover={{ backgroundColor: 'rgba(0,0,0,0.4)' }}
-            >
-              <motion.div
-                className="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-primary/90 flex items-center justify-center shadow-lg"
-                initial={{ scale: 0.8 }}
-                whileHover={{ scale: 1.1 }}
-                transition={{ type: 'spring', stiffness: 300 }}
-              >
-                <Play className="w-6 h-6 sm:w-8 sm:h-8 text-primary-foreground ml-1" fill="currentColor" />
-              </motion.div>
-            </motion.div>
-
-            {/* Delete button for admins */}
-            {isAdmin && onDelete && (
-              <motion.button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onDelete(video);
-                }}
-                className="absolute top-2 right-2 p-2 rounded-lg bg-destructive/80 text-white opacity-0 group-hover:opacity-100 transition-opacity duration-200 hover:bg-destructive"
-                whileHover={{ scale: 1.1 }}
-                whileTap={{ scale: 0.9 }}
-              >
-                <Trash2 className="w-4 h-4" />
-              </motion.button>
-            )}
-          </div>
-
-          {/* Content */}
-          <div className="p-3 sm:p-4">
-            <h3 className="font-bold text-foreground truncate mb-2 group-hover:text-primary transition-colors text-sm sm:text-base">
-              {video.title}
-            </h3>
-            <div className="flex items-center gap-1 text-xs text-muted-foreground">
-              <Calendar className="w-3 h-3" />
-              <span>{formatDate(video.created_at)}</span>
+  return (
+    <motion.div
+      className="relative cursor-pointer rounded-xl overflow-hidden bg-zinc-900 group/card w-full"
+      onClick={() => navigate(`/video/${video.id}`)}
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4, delay: Math.min(index * 0.04, 0.4), ease: [0.22, 1, 0.36, 1] }}
+      whileHover={{ scale: 1.04, zIndex: 10 }}
+      whileTap={{ scale: 0.98 }}
+      style={{ zIndex: 0 }}
+    >
+      {/* Thumbnail */}
+      <div className="aspect-video overflow-hidden">
+        {video.thumbnail_url ? (
+          <img
+            src={video.thumbnail_url}
+            alt={video.title}
+            className="w-full h-full object-cover transition-transform duration-500 ease-out group-hover/card:scale-105"
+            loading="lazy"
+          />
+        ) : (
+          <div className="w-full h-full bg-gradient-to-br from-primary/20 to-accent/10 flex items-center justify-center">
+            <div className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center">
+              <Play className="w-4 h-4 text-white/25 ml-0.5" />
             </div>
           </div>
-        </GlassCard>
-      </motion.div>
-    );
-  }
-));
+        )}
+      </div>
 
-VideoCard.displayName = "VideoCard";
+      {/* Gradient overlay */}
+      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/10 to-transparent opacity-60 group-hover/card:opacity-100 transition-opacity duration-300 pointer-events-none" />
+
+      {/* Play button */}
+      <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover/card:opacity-100 transition-opacity duration-200 pointer-events-none">
+        <div className="w-11 h-11 rounded-full bg-white/15 border border-white/30 backdrop-blur-sm flex items-center justify-center shadow-xl">
+          <Play className="w-4 h-4 text-white fill-white ml-0.5" />
+        </div>
+      </div>
+
+      {/* Title — slides up on hover */}
+      <div className="absolute bottom-0 inset-x-0 px-3 py-2.5 translate-y-1 opacity-0 group-hover/card:translate-y-0 group-hover/card:opacity-100 transition-all duration-300 pointer-events-none">
+        <p className="text-white text-[11px] font-bold line-clamp-2 leading-tight drop-shadow-lg">
+          {video.title}
+        </p>
+      </div>
+
+      {/* Delete — admin only */}
+      {onDelete && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onDelete(video); }}
+          className="absolute top-2 right-2 w-7 h-7 rounded-lg bg-black/60 border border-white/10 flex items-center justify-center text-white/40 hover:text-red-400 hover:bg-red-500/15 hover:border-red-500/20 transition-all opacity-0 group-hover/card:opacity-100"
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+        </button>
+      )}
+    </motion.div>
+  );
+});
+
+VideoCard.displayName = 'VideoCard';

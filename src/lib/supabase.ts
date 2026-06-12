@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 
-const SUPABASE_URL = "https://yeqinwgmiiphrljfjqpf.supabase.co";
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InllcWlud2dtaWlwaHJsamZqcXBmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ4MjUyOTQsImV4cCI6MjA4MDQwMTI5NH0.As2qwWMkTEzags8C8A1wIWErz_5ISl5JOyv8NIhGasw";
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
@@ -13,10 +13,19 @@ export interface Profile {
 export interface Video {
   id: string;
   title: string;
+  description: string | null;
   url: string;
-  storage_path?: string;
-  thumbnail_url?: string;
+  storage_path: string | null;
+  thumbnail_url: string | null;
   created_at: string;
+}
+
+export interface VideoInsert {
+  title: string;
+  description?: string | null;
+  url: string;
+  storage_path: string | null;
+  thumbnail_url: string | null;
 }
 
 export interface Playlist {
@@ -29,10 +38,4 @@ export interface PlaylistItem {
   id: string;
   playlist_id: string;
   video_id: string;
-}
-
-// Helper to get public URL from storage path
-export function getPublicUrl(bucket: string, path: string): string {
-  const { data } = supabase.storage.from(bucket).getPublicUrl(path);
-  return data.publicUrl;
 }

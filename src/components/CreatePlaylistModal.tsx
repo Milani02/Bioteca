@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, FolderPlus, Loader2 } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
+import { playlistService } from '@/services/playlistService';
+import { toAppError } from '@/lib/errors';
 import { toast } from 'sonner';
 
 interface CreatePlaylistModalProps {
@@ -27,22 +28,19 @@ export function CreatePlaylistModal({ isOpen, onClose, onSuccess }: CreatePlayli
     setLoading(true);
 
     try {
-      const { error } = await supabase
-        .from('playlists')
-        .insert({ title: title.trim() });
-
-      if (error) throw error;
+      await playlistService.create(title);
 
       toast.success('Playlist criada com sucesso!', {
         className: 'glass-card border border-white/10'
       });
-      
+
       setTitle('');
       onSuccess();
       onClose();
-    } catch (error: any) {
+    } catch (err) {
+      const error = toAppError(err);
       console.error('Playlist creation error:', error);
-      toast.error('Erro ao criar playlist: ' + error.message, {
+      toast.error(error.message, {
         className: 'glass-card border border-white/10'
       });
     } finally {
