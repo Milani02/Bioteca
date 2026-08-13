@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(cd C:\\\\Users\\\\adm_ti\\\\desktop\\\\bioteca && Get-ChildItem -Path \".\" -Depth 2 | Where-Object {-not $_.FullName.Contains\\('.git'\\) -and -not $_.FullName.Contains\\('node_modules'\\)} | Select-Object FullName, PSIsContainer | Sort-Object FullName)",
+      "PowerShell(cd C:\\\\Users\\\\adm_ti\\\\desktop\\\\bioteca && Get-ChildItem -Path \".\" | Where-Object {$_.Name -match 'sql|db|schema|supabase'})",
+      "PowerShell(npx tsc --noEmit --project \"C:\\\\Users\\\\adm_ti\\\\desktop\\\\bioteca\\\\tsconfig.app.json\" 2>&1; Write-Host \"EXIT: $LASTEXITCODE\")",
+      "PowerShell(npx vite build --project \"C:\\\\Users\\\\adm_ti\\\\desktop\\\\bioteca\" 2>&1; Write-Host \"BUILD EXIT: $LASTEXITCODE\")",
+      "PowerShell(Set-Location \"C:\\\\Users\\\\adm_ti\\\\desktop\\\\bioteca\"; npx vite build 2>&1; Write-Host \"BUILD EXIT: $LASTEXITCODE\")",
+      "PowerShell(Set-Location \"C:\\\\Users\\\\adm_ti\\\\desktop\\\\bioteca\"; npx tsc --noEmit --project tsconfig.app.json 2>&1; Write-Host \"TSC EXIT: $LASTEXITCODE\")",
+      "PowerShell(Set-Location \"C:\\\\Users\\\\adm_ti\\\\desktop\\\\bioteca\"; npx tsc --noEmit --project tsconfig.app.json 2>&1; Write-Host \"TSC: $LASTEXITCODE\")",
+      "PowerShell(cd C:\\\\Users\\\\adm_ti\\\\desktop\\\\bioteca && npx tsc --noEmit --project tsconfig.app.json 2>&1; Write-Host \"EXIT: $LASTEXITCODE\")"
+    ]
+  }
+}
