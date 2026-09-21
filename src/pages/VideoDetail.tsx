@@ -4,14 +4,16 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Play, ArrowLeft, Trash2, Calendar, ListVideo,
-  Video as VideoIcon, Pencil, Check, X, Plus,
+  Video as VideoIcon, Pencil, Check, X, Plus, Clock,
 } from 'lucide-react';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { useAuth } from '@/contexts/AuthContext';
 import { videoService } from '@/services/videoService';
 import { playlistService } from '@/services/playlistService';
-import { supabase, Playlist, Video } from '@/lib/supabase';
+import { chapterService } from '@/services/chapterService';
+import { supabase, Playlist, Video, VideoChapter } from '@/lib/supabase';
 import { toAppError } from '@/lib/errors';
+import { formatTime, parseTimeToSeconds } from '@/lib/time';
 import { toast } from 'sonner';
 import { Navbar } from '@/components/Navbar';
 import { VideoRow } from '@/components/VideoRow';
@@ -68,6 +70,16 @@ export default function VideoDetail() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
 
+  /* ── Chapters ── */
+  const [videoDuration, setVideoDuration] = useState<number | null>(null);
+  const [isAddingChapter, setIsAddingChapter] = useState(false);
+  const [chapterTitleDraft, setChapterTitleDraft] = useState('');
+  const [chapterTimeDraft, setChapterTimeDraft] = useState('');
+  const [isSavingChapter, setIsSavingChapter] = useState(false);
+  const [chapterToDelete, setChapterToDelete] = useState<VideoChapter | null>(null);
+  const [isDeletingChapter, setIsDeletingChapter] = useState(false);
+  const chapterTitleInputRef = useRef<HTMLInputElement>(null);
+
   useEffect(() => {
     if (!authLoading && !user) navigate('/');
   }, [authLoading, user, navigate]);
@@ -76,6 +88,10 @@ export default function VideoDetail() {
     if (editingField === 'description') textareaRef.current?.focus();
     if (editingField === 'title') titleInputRef.current?.focus();
   }, [editingField]);
+
+  useEffect(() => {
+    if (isAddingChapter) chapterTitleInputRef.current?.focus();
+  }, [isAddingChapter]);
 
   /* ── Queries ── */
   const { data: allPlaylists = [] } = useQuery({
@@ -115,6 +131,12 @@ export default function VideoDetail() {
 
       return (pls ?? []) as Playlist[];
     },
+    enabled: !!id,
+  });
+
+  const { data: chapters = [], refetch: refetchChapters } = useQuery({
+    queryKey: ['chapters', id],
+    queryFn: () => chapterService.fetchByVideoId(id!),
     enabled: !!id,
   });
 
@@ -195,6 +217,59 @@ export default function VideoDetail() {
     }
   };
 
+  const cancelAddChapter = () => {
+    setIsAddingChapter(false);
+    setChapterTitleDraft('');
+    setChapterTimeDraft('');
+  };
+
+  const handleAddChapter = async () => {
+    if (!video) return;
+    const title = chapterTitleDraft.trim();
+    if (!title) return;
+
+    const startTime = parseTimeToSeconds(chapterTimeDraft);
+    if (startTime === null) {
+      toast.error('Formato de tempo inválido (use mm:ss)');
+      return;
+    }
+    if (videoDuration && startTime > videoDuration) {
+      toast.error('O tempo informado é maior que a duração do vídeo');
+      return;
+    }
+
+    setIsSavingChapter(true);
+    try {
+      await chapterService.insert({
+        video_id: video.id,
+        title,
+        start_time_seconds: startTime,
+      });
+      await refetchChapters();
+      cancelAddChapter();
+      toast.success('Capítulo adicionado');
+    } catch (err) {
+      toast.error(toAppError(err).message);
+    } finally {
+      setIsSavingChapter(false);
+    }
+  };
+
+  const confirmDeleteChapter = async () => {
+    if (!chapterToDelete) return;
+    setIsDeletingChapter(true);
+    try {
+      await chapterService.remove(chapterToDelete.id);
+      await refetchChapters();
+      toast.success('Capítulo removido');
+    } catch (err) {
+      toast.error(toAppError(err).message);
+    } finally {
+      setIsDeletingChapter(false);
+      setChapterToDelete(null);
+    }
+  };
+
   const handlePlaylistSelect = (pid: string | null, _title: string) => {
     setSelectedPlaylist(pid);
     setIsMobileDrawerOpen(false);
@@ -241,6 +316,16 @@ export default function VideoDetail() {
         onSelectPlaylist={handlePlaylistSelect}
         onCreatePlaylist={() => {}}
       />
+
+      {/* Probe oculto: só carrega metadata para validar timestamps de capítulos */}
+      {isAdmin && (
+        <video
+          src={video.url}
+          preload="metadata"
+          className="hidden"
+          onLoadedMetadata={(e) => setVideoDuration(e.currentTarget.duration)}
+        />
+      )}
 
       {/* Ambient background */}
       <div className="fixed inset-0 z-0 overflow-hidden pointer-events-none">
@@ -545,6 +630,116 @@ export default function VideoDetail() {
           </motion.div>
         </section>
 
+        {/* ── Capítulos ── */}
+        {(chapters.length > 0 || isAdmin) && (
+          <motion.div
+            className="px-4 md:px-10 xl:px-16 mt-16 md:mt-20 max-w-3xl"
+            initial={{ opacity: 0, y: 24 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.3, duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-[11px] font-bold text-white/35 uppercase tracking-[0.22em] flex items-center gap-2">
+                <Clock className="w-3.5 h-3.5" />
+                Capítulos
+              </h2>
+              {isAdmin && !isAddingChapter && (
+                <button
+                  onClick={() => setIsAddingChapter(true)}
+                  className="p-1.5 rounded-lg text-white/20 hover:text-white/60 hover:bg-white/[0.05] transition-all"
+                  title="Adicionar capítulo"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            <AnimatePresence>
+              {isAddingChapter && (
+                <motion.div
+                  initial={{ opacity: 0, y: -6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -6 }}
+                  transition={{ duration: 0.2 }}
+                  className="mb-4"
+                >
+                  <div className="flex flex-col sm:flex-row gap-2 bg-white/[0.04] border border-white/[0.1] rounded-xl p-3">
+                    <input
+                      ref={chapterTitleInputRef}
+                      value={chapterTitleDraft}
+                      onChange={e => setChapterTitleDraft(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') handleAddChapter();
+                        if (e.key === 'Escape') cancelAddChapter();
+                      }}
+                      placeholder="Título do capítulo"
+                      className="flex-1 bg-transparent text-white text-sm focus:outline-none placeholder:text-white/20 px-2 py-1.5"
+                      maxLength={120}
+                    />
+                    <input
+                      value={chapterTimeDraft}
+                      onChange={e => setChapterTimeDraft(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') handleAddChapter();
+                        if (e.key === 'Escape') cancelAddChapter();
+                      }}
+                      placeholder="mm:ss"
+                      className="w-full sm:w-24 bg-white/[0.05] rounded-lg text-white text-sm text-center focus:outline-none placeholder:text-white/20 px-2 py-1.5"
+                    />
+                    <div className="flex gap-2 flex-shrink-0">
+                      <motion.button
+                        onClick={handleAddChapter}
+                        disabled={isSavingChapter || !chapterTitleDraft.trim() || !chapterTimeDraft.trim()}
+                        className="flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-bold text-white disabled:opacity-40"
+                        style={{ background: 'linear-gradient(135deg, hsl(var(--primary)), hsl(var(--accent)))' }}
+                        whileTap={{ scale: 0.96 }}
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                        {isSavingChapter ? 'Salvando…' : 'Salvar'}
+                      </motion.button>
+                      <button
+                        onClick={cancelAddChapter}
+                        className="flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-semibold text-white/40 border border-white/10 hover:text-white hover:border-white/20 transition-all"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {chapters.length > 0 ? (
+              <ul className="space-y-1">
+                {chapters.map(c => (
+                  <li
+                    key={c.id}
+                    className="group/chapter flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/[0.04] transition-colors"
+                  >
+                    <span className="text-xs font-mono text-primary/80 bg-primary/10 rounded-md px-2 py-1 flex-shrink-0">
+                      {formatTime(c.start_time_seconds)}
+                    </span>
+                    <span className="flex-1 min-w-0 text-sm text-white/70 truncate">{c.title}</span>
+                    {isAdmin && (
+                      <button
+                        onClick={() => setChapterToDelete(c)}
+                        className="p-1.5 rounded-lg text-white/0 group-hover/chapter:text-white/25 hover:!text-red-400 hover:bg-red-400/[0.06] transition-all flex-shrink-0"
+                        title="Remover capítulo"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              !isAddingChapter && (
+                <p className="text-sm text-white/20">Nenhum capítulo cadastrado ainda.</p>
+              )
+            )}
+          </motion.div>
+        )}
+
         {/* ── Relacionados ── */}
         {relatedVideos.length > 0 && (
           <motion.div
@@ -594,6 +789,17 @@ export default function VideoDetail() {
         isLoading={isDeleting}
         onConfirm={confirmDeleteRelated}
         onCancel={() => setVideoToDelete(null)}
+      />
+
+      {/* Confirm delete — capítulo */}
+      <ConfirmDialog
+        isOpen={!!chapterToDelete}
+        title="Excluir capítulo"
+        description={`"${chapterToDelete?.title ?? ''}" será removido permanentemente.`}
+        confirmLabel="Excluir capítulo"
+        isLoading={isDeletingChapter}
+        onConfirm={confirmDeleteChapter}
+        onCancel={() => setChapterToDelete(null)}
       />
     </motion.div>
   );

@@ -28,6 +28,20 @@ export interface VideoInsert {
   thumbnail_url: string | null;
 }
 
+export interface VideoChapter {
+  id: string;
+  video_id: string;
+  title: string;
+  start_time_seconds: number;
+  created_at: string;
+}
+
+export interface VideoChapterInsert {
+  video_id: string;
+  title: string;
+  start_time_seconds: number;
+}
+
 export interface Playlist {
   id: string;
   title: string;
